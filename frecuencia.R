@@ -89,37 +89,48 @@ tabla_frecuencias <- function(var, ordenar_fr = TRUE) {
 #' Calcula métricas de dispersión y agrupa una variable continua.
 #'
 #' @description Toma un vector numérico continuo, calcula el Rango,
-#' la cantidad de intervalos usando la Regla de Sturges y la Amplitud.
+#' la cantidad de intervalos (por Regla de Sturges o parámetros manuales) y la Amplitud.
 #' Calcula los cortes exactos (breaks) para alinear los gráficos con la tabla.
 #' Luego, utiliza la función nativa cut() para agrupar los datos en esos intervalos.
 #'
 #' @param var Vector numérico con los datos continuos a procesar.
-#' @return Una lista que contiene las métricas (rango, k, amplitud), los cortes calculados, 
+#' @param min_custom Límite inferior forzado por el usuario (opcional).
+#' @param amp_custom Amplitud de clase forzada por el usuario (opcional).
+#' @return Una lista que contiene las métricas, los cortes calculados, 
 #' y el vector de datos agrupados como un factor.
 #' @export
-procesar_continua <- function(var) {
+procesar_continua <- function(var, min_custom = NULL, amp_custom = NULL) {
   var <- var[!is.na(var)]
   
-  # 1. Rango (R)
   val_max <- max(var)
   val_min <- min(var)
   rango <- val_max - val_min
   
-  # 2. Cantidad de Intervalos / Clases (k) - Regla de Sturges
-  n <- length(var)
-  k <- ceiling(1 + 3.322 * log10(n))
+  # 1. Definir el límite inferior inicial
+  inicio <- if (!is.null(min_custom)) min_custom else val_min
   
-  # 3. Amplitud (A)
-  amplitud <- rango / k
+  # 2. Definir la amplitud y la cantidad de intervalos
+  if (!is.null(amp_custom)) {
+    amplitud <- amp_custom
+  } else {
+    n <- length(var)
+    k_sturges <- ceiling(1 + 3.322 * log10(n))
+    amplitud <- rango / k_sturges
+  }
+  
+  # 3. Calcular el límite superior definitivo para que no quede ningún dato afuera
+  # (Se asegura de sumar la amplitud necesaria hasta superar el valor máximo)
+  fin <- inicio + ceiling((val_max - inicio) / amplitud) * amplitud
   
   # 4. Cortes exactos para garantizar alineación entre gráficos y tabla
-  cortes <- seq(from = val_min, to = val_max, length.out = k + 1)
+  cortes <- seq(from = inicio, to = fin, by = amplitud)
+  k_final <- length(cortes) - 1
   
   # 5. Agrupar los datos
   datos_agrupados <- cut(var, breaks = cortes, include.lowest = TRUE, right = FALSE)
   
   resultados <- list(
-    metricas = c(Rango = rango, Intervalos = k, Amplitud = amplitud),
+    metricas = c(Rango = rango, Intervalos = k_final, Amplitud = amplitud),
     cortes = cortes,
     vector_categorico = datos_agrupados
   )
@@ -350,7 +361,7 @@ procesar_graficos <- function(string_graficos, var_cruda, var_tabular, cortes, n
     lista_graficos <- unlist(strsplit(string_graficos, ","))
     lista_graficos <- tolower(trimws(lista_graficos))
     
-    # Filtro de seguridad (el patovica)
+    # Filtro de seguridad
     graficos_permitidos <- if(es_continua) graficos_continuos else graficos_discretos
     graficos_invalidos <- setdiff(lista_graficos, graficos_permitidos)
     
@@ -390,15 +401,19 @@ option_list <- list(
   make_option(c("-t", "--tipo"), type="character", default="discreta", 
               help="Tipo de variable: 'discreta' (por defecto) o 'continua'"),
   make_option(c("-g", "--graph"), type="character", default=NULL, 
-              help="Gráficos opcionales separados por coma, o 'all' para todos")
+              help="Gráficos opcionales separados por coma, o 'all' para todos"),
+  make_option(c("-m", "--min"), type="numeric", default=NULL, 
+              help="Forzar límite inferior para la primera clase (solo continuas)"),
+  make_option(c("-a", "--amp"), type="numeric", default=NULL, 
+              help="Forzar amplitud de clase (solo continuas)")
 )
 
-opt_parser <- OptionParser(option_list=option_list, description="Analizador Estadístico y Generador de Gráficos v1.6")
+opt_parser <- OptionParser(option_list=option_list, description="Analizador Estadístico y Generador de Gráficos v1.7")
 opt <- parse_args(opt_parser)
 
 if (is.null(opt$base) || is.null(opt$var)) {
   cli::cli_alert_danger("Faltan argumentos obligatorios.")
-  cli::cli_text("Uso: {.code ./frecuencia.R -b datos.xlsx -v SALARIO -t continua [-g all]}")
+  cli::cli_text("Uso: {.code ./frecuencia.R -b datos.xlsx -v GASTOS -t continua -m 55 -a 5 [-g all]}")
   quit(status = 1)
 }
 
@@ -431,7 +446,8 @@ if (es_continua) {
     cli::cli_abort("La variable {.var {opt$var}} debe ser numérica para tratarla como continua.")
   }
   
-  res_continua <- procesar_continua(vector_datos)
+  # Le pasamos los nuevos argumentos opcionales a la función
+  res_continua <- procesar_continua(vector_datos, min_custom = opt$min, amp_custom = opt$amp)
   vector_a_tabular <- res_continua$vector_categorico
   cortes_sturges <- res_continua$cortes
 } else {
