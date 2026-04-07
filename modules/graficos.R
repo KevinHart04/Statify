@@ -30,16 +30,39 @@ plot_barras <- function(var, nombre_var, cortes = NULL) {
   cli::cli_alert_success("Guardado: {.file {archivo}}")
 }
 
-#' Genera gráfico de sectores.
+#' Genera gráfico de sectores con porcentajes y leyenda inferior.
 #'
-#' @param var Datos discretos.
-#' @param nombre_var Etiqueta.
+#' @description Crea un gráfico circular (pie chart) calculando las proporciones
+#' exactas e imprimiendo las etiquetas de porcentaje sobre cada sector.
+#' @param var Datos discretos a graficar.
+#' @param nombre_var Etiqueta de la variable.
+#' @param cortes Placeholder por compatibilidad.
 #' @export
 plot_sectores <- function(var, nombre_var, cortes = NULL) {
   archivo <- paste0("sectores_", nombre_var, ".png")
-  df <- as.data.frame(table(var[!is.na(var)])); colnames(df) <- c("Valores", "f")
-  p <- ggplot(df, aes(x = "", y = f, fill = Valores)) + geom_bar(stat = "identity", width = 1) + coord_polar("y") + theme_void()
-  ggsave(archivo, plot = p + labs(title=paste("Sectores:", nombre_var)), width = 8, height = 6)
+  
+  # 1. Armamos el dataframe
+  df <- as.data.frame(table(var[!is.na(var)]))
+  colnames(df) <- c("Valores", "f")
+  
+  # 2. Calculamos los porcentajes y preparamos la etiqueta
+  df$porcentaje <- (df$f / sum(df$f)) * 100
+  df$etiqueta <- sprintf("%.1f%%", df$porcentaje)
+  
+  # 3. Construimos el gráfico
+  p <- ggplot(df, aes(x = "", y = f, fill = Valores)) + 
+    # Agregamos un borde blanco sutil a las porciones para que se vea más limpio
+    geom_bar(stat = "identity", width = 1, color = "white") + 
+    coord_polar("y", start = 0) + 
+    # Colocamos las etiquetas en el medio de cada sector
+    geom_text(aes(label = etiqueta), position = position_stack(vjust = 0.5), 
+              color = "black", fontface = "bold", size = 4) +
+    theme_void() +
+    # Movemos la leyenda abajo y le damos un título amigable
+    theme(legend.position = "bottom") +
+    labs(title = paste("Sectores:", nombre_var), fill = "Categorías:")
+    
+  ggsave(archivo, plot = p, width = 8, height = 6, bg = "white")
   cli::cli_alert_success("Guardado: {.file {archivo}}")
 }
 
